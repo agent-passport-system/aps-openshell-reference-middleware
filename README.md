@@ -83,7 +83,7 @@ read of the upstream pipe, described under "Zero upstream bytes" below.
 | P2-6 WebSocket upgrade request reaches the middleware and is denied before upstream | `aps_middleware_denies_upgrade_request_before_upstream` | 10/10 |
 | P2-6 control: with the refusal off, the same upgrade request does reach upstream | `aps_upgrade_reaches_upstream_when_middleware_allows_it` | 10/10 |
 | P2-7 revocation between two requests of the same session: first allowed, revoke, second denied | `aps_middleware_denies_second_request_after_revocation` | 10/10 |
-| P2-8 middleware decision latency over 200 allowed requests | `aps_middleware_latency_over_allowed_requests` | median 847 us, p95 1014 us |
+| P2-8 middleware decision latency over 200 allowed requests | `aps_middleware_latency_over_allowed_requests` | median 830 us, p95 978 us |
 
 Latency is as measured on this machine by the middleware process itself, and is not a claim about any other
 machine or deployment.

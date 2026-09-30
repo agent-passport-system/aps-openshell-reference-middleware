@@ -1,0 +1,34 @@
+run  1  green exit=0 ran=true  red exit=0 ran=true APS_UPSTREAM_BYTES_AFTER_DENY=0 zero_upstream_bytes=true
+run  2  green exit=0 ran=true  red exit=0 ran=true APS_UPSTREAM_BYTES_AFTER_DENY=0 zero_upstream_bytes=true
+run  3  green exit=0 ran=true  red exit=0 ran=true APS_UPSTREAM_BYTES_AFTER_DENY=0 zero_upstream_bytes=true
+run  4  green exit=0 ran=true  red exit=0 ran=true APS_UPSTREAM_BYTES_AFTER_DENY=0 zero_upstream_bytes=true
+run  5  green exit=0 ran=true  red exit=0 ran=true APS_UPSTREAM_BYTES_AFTER_DENY=0 zero_upstream_bytes=true
+run  6  green exit=0 ran=true  red exit=0 ran=true APS_UPSTREAM_BYTES_AFTER_DENY=0 zero_upstream_bytes=true
+run  7  green exit=0 ran=true  red exit=0 ran=true APS_UPSTREAM_BYTES_AFTER_DENY=0 zero_upstream_bytes=true
+run  8  green exit=0 ran=true  red exit=0 ran=true APS_UPSTREAM_BYTES_AFTER_DENY=0 zero_upstream_bytes=true
+run  9  green exit=0 ran=true  red exit=0 ran=true APS_UPSTREAM_BYTES_AFTER_DENY=0 zero_upstream_bytes=true
+run 10  green exit=0 ran=true  red exit=0 ran=true APS_UPSTREAM_BYTES_AFTER_DENY=0 zero_upstream_bytes=true
+run 11  green exit=0 ran=true  red exit=0 ran=true APS_UPSTREAM_BYTES_AFTER_DENY=0 zero_upstream_bytes=true
+run 12  green exit=0 ran=true  red exit=0 ran=true APS_UPSTREAM_BYTES_AFTER_DENY=0 zero_upstream_bytes=true
+run 13  green exit=0 ran=true  red exit=0 ran=true APS_UPSTREAM_BYTES_AFTER_DENY=0 zero_upstream_bytes=true
+run 14  green exit=0 ran=true  red exit=0 ran=true APS_UPSTREAM_BYTES_AFTER_DENY=0 zero_upstream_bytes=true
+run 15  green exit=0 ran=true  red exit=0 ran=true APS_UPSTREAM_BYTES_AFTER_DENY=0 zero_upstream_bytes=true
+run 16  green exit=0 ran=true  red exit=0 ran=true APS_UPSTREAM_BYTES_AFTER_DENY=0 zero_upstream_bytes=true
+run 17  green exit=0 ran=true  red exit=0 ran=true APS_UPSTREAM_BYTES_AFTER_DENY=0 zero_upstream_bytes=true
+run 18  green exit=0 ran=true  red exit=0 ran=true APS_UPSTREAM_BYTES_AFTER_DENY=0 zero_upstream_bytes=true
+run 19  green exit=0 ran=true  red exit=0 ran=true APS_UPSTREAM_BYTES_AFTER_DENY=0 zero_upstream_bytes=true
+run 20  green exit=0 ran=true  red exit=0 ran=true APS_UPSTREAM_BYTES_AFTER_DENY=0 zero_upstream_bytes=true
+run 21  green exit=0 ran=true  red exit=0 ran=true APS_UPSTREAM_BYTES_AFTER_DENY=0 zero_upstream_bytes=true
+run 22  green exit=0 ran=true  red exit=0 ran=true APS_UPSTREAM_BYTES_AFTER_DENY=0 zero_upstream_bytes=true
+run 23  green exit=0 ran=true  red exit=0 ran=true APS_UPSTREAM_BYTES_AFTER_DENY=0 zero_upstream_bytes=true
+run 24  green exit=0 ran=true  red exit=0 ran=true APS_UPSTREAM_BYTES_AFTER_DENY=0 zero_upstream_bytes=true
+run 25  green exit=0 ran=true  red exit=0 ran=true APS_UPSTREAM_BYTES_AFTER_DENY=0 zero_upstream_bytes=true
+
+GREEN passed 25/25
+RED   passed 25/25
+RED runs with zero upstream bytes: 25/25   (observation missing in 0)
+total runs: 50/50   elapsed 3528.0s
+
+GATE G1: PASS
+command per GREEN run: cargo test -p openshell-supervisor-network --lib l7::relay::tests::aps_middleware_allows_valid_chain_and_forwards -- --exact --nocapture --test-threads=1
+command per RED run:   cargo test -p openshell-supervisor-network --lib l7::relay::tests::aps_middleware_denies_before_upstream -- --exact --nocapture --test-threads=1

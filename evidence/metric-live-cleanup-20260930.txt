@@ -1,0 +1,82 @@
+Item 4 of the Case A cleanup: proof that the runner's own zero-byte metric is live.
+
+Mutation M1b, applied in /tmp/aps-os/openshell only, never committed, reverted below.
+At the MiddlewareApplyResult::Denied arm inside relay_rest (relay.rs:2001 at ba16b9f),
+write the 53-byte request line to upstream before the rejection response:
+
+    let _ = upstream
+        .write_all(b"GET /v1/messages HTTP/1.1\r\nHost: api.example.test\r\n\r\n")
+        .await;
+    let _ = upstream.flush().await;
+
+$ cargo test -p openshell-supervisor-network --lib --no-run
+EXIT=0
+
+$ APS_MW_G1_RUNS=1 node scripts/run-g1.mjs
+EXIT=1
+run  1  green exit=0 ran=true  red exit=101 ran=false APS_UPSTREAM_BYTES_AFTER_DENY=32 zero_upstream_bytes=false
+
+running 1 test
+test l7::relay::tests::aps_middleware_denies_before_upstream ... 
+APS_UPSTREAM_BYTES_AFTER_DENY=32
+FAILED
+
+failures:
+
+failures:
+    l7::relay::tests::aps_middleware_denies_before_upstream
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1418 filtered out; finished in 0.28s
+
+   Compiling openshell-core v0.0.0 (/private/tmp/aps-os/openshell/crates/openshell-core)
+   Compiling openshell-isolation-interface v0.0.0 (/private/tmp/aps-os/openshell/crates/openshell-isolation-interface)
+   Compiling openshell-supervisor-middleware v0.0.0 (/private/tmp/aps-os/openshell/crates/openshell-supervisor-middleware)
+   Compiling openshell-policy v0.0.0 (/private/tmp/aps-os/openshell/crates/openshell-policy)
+   Compiling openshell-supervisor-middleware-builtins v0.0.0 (/private/tmp/aps-os/openshell/crates/openshell-supervisor-middleware-builtins)
+   Compiling openshell-binary-identity v0.0.0 (/private/tmp/aps-os/openshell/crates/openshell-binary-identity)
+   Compiling openshell-supervisor-network v0.0.0 (/private/tmp/aps-os/openshell/crates/openshell-supervisor-network)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 28.32s
+     Running unittests src/lib.rs (target/debug/deps/openshell_supervisor_network-95bce81728205638)
+
+thread 'l7::relay::tests::aps_middleware_denies_before_upstream' (67952359) panicked at crates/openshell-supervisor-network/src/l7/relay.rs:12051:9:
+assertion `left == right` failed: the post-denial read of the upstream pipe observed bytes
+  left: Some(32)
+ right: Some(0)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `-p openshell-supervisor-network --lib`
+
+
+GREEN passed 1/1
+RED   passed 0/1
+RED runs with zero upstream bytes: 0/1   (observation missing in 0)
+total runs: 1/2   elapsed 89.1s
+
+GATE G1: FAIL
+command per GREEN run: cargo test -p openshell-supervisor-network --lib l7::relay::tests::aps_middleware_allows_valid_chain_and_forwards -- --exact --nocapture --test-threads=1
+command per RED run:   cargo test -p openshell-supervisor-network --lib l7::relay::tests::aps_middleware_denies_before_upstream -- --exact --nocapture --test-threads=1
+
+--- Revert, proven by SHA-256 against the pre-mutation file ---
+
+$ cp /tmp/aps-cleanup/relay.rs.PRE-M1B crates/openshell-supervisor-network/src/l7/relay.rs
+$ shasum -a 256 crates/openshell-supervisor-network/src/l7/relay.rs /tmp/aps-cleanup/relay.rs.PRE-M1B
+dafa9ba0c8b170fee9825f55d8b7d0dcc0735cda9daec55cef400ab3b2a52805  crates/openshell-supervisor-network/src/l7/relay.rs
+dafa9ba0c8b170fee9825f55d8b7d0dcc0735cda9daec55cef400ab3b2a52805  /tmp/aps-cleanup/relay.rs.PRE-M1B
+$ git diff HEAD --numstat -- crates/openshell-supervisor-network/src/l7/relay.rs
+494	0	crates/openshell-supervisor-network/src/l7/relay.rs
+
+--- Rebuilt and rerun after the revert ---
+
+$ cargo test -p openshell-supervisor-network --lib --no-run
+EXIT=0
+$ APS_MW_G1_RUNS=1 node scripts/run-g1.mjs
+EXIT=0
+run  1  green exit=0 ran=true  red exit=0 ran=true APS_UPSTREAM_BYTES_AFTER_DENY=0 zero_upstream_bytes=true
+
+GREEN passed 1/1
+RED   passed 1/1
+RED runs with zero upstream bytes: 1/1   (observation missing in 0)
+total runs: 2/2   elapsed 98.3s
+
+GATE G1: PASS
+command per GREEN run: cargo test -p openshell-supervisor-network --lib l7::relay::tests::aps_middleware_allows_valid_chain_and_forwards -- --exact --nocapture --test-threads=1
+command per RED run:   cargo test -p openshell-supervisor-network --lib l7::relay::tests::aps_middleware_denies_before_upstream -- --exact --nocapture --test-threads=1

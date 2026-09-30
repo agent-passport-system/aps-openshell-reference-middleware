@@ -435,3 +435,116 @@ runtime, not installed per rules.**
 - Local repository state cannot prove that no external write happened during this job. What can be said is that
   the repository has no configured remotes, no push, publish, or GitHub write command was issued, and no
   GitHub-writing tool was invoked.
+
+---
+
+## ERRATUM AND RERUN, 2026-09-30 (Day 226): the Case A cleanup
+
+Appended by the cleanup commit. Nothing above this line has been rewritten except the three citation rows under
+"Chat-sourced facts re-verified at the pin" and the `Upgrade` citation in "Case 6", both of which now name the
+tested path alongside what was originally checked. The captured command output above is left exactly as it was
+recorded, including the harness patch's old 457-line stat. The claim is unchanged, word for word.
+
+### What was wrong
+
+**The zero-byte evidence had a vacuous layer on top of a sound one.** Four deny assertions read
+`assert!(forwarded.is_empty(), ...)`. `forwarded` was only ever written inside `if expect_forwarded {`, so on a
+deny path it came back empty on every route and those assertions could not fail. `run-g1.mjs` and `run-p2.mjs`
+keyed their zero-byte signal off the panic text only those assertions could print, so the reported tally "RED runs
+with zero upstream bytes: 25/25" was measuring nothing. The real check, the 200 ms read of the upstream pipe after
+the denial, was sound throughout, and a real forward always failed the gate through the exit code.
+
+**The enforcement citation named a relay path no test here runs.** `relay.rs:1208`, `:1240` and `:1305` are inside
+`relay_with_route_selection` (`relay.rs:923`). The harness drives `relay_with_inspection` (`relay.rs:853`), which
+dispatches `L7Protocol::Rest` to `relay_rest` (`relay.rs:1830`) at `relay.rs:877`.
+
+**The `Upgrade` omission citation named a mutation guard.**
+`openshell-supervisor-middleware/src/headers.rs:298` and `:303` are inside `fn is_request_protected` at `:288`,
+which governs whether a middleware may mutate a header. They remove nothing from what a middleware sees.
+
+### What replaced it
+
+`aps_request` returns `Option<usize>` carrying what the post-denial read of the upstream pipe actually returned.
+It is `Some` only when that read ran; nothing else populates it. Every deny test asserts on that value. The
+harness prints `APS_UPSTREAM_BYTES_AFTER_DENY=<n>` before it asserts, so the number survives a failing run, and
+both runners parse that line. A run with the line missing counts as a failure, never as a zero. `run-p2.mjs` also
+checks how many post-denial reads each case made, so an allow-only case cannot claim the metric by observing
+nothing.
+
+Corrected citations, each re-verified against the pristine blob at `ba16b9f` before the edit:
+
+| Landmark | Tested path, `relay_with_inspection` -> `relay_rest` | What is at the line |
+|---|---|---|
+| Chain apply | `relay.rs:1988` | `apply_middleware_chain_with_request_id(` |
+| Deny return | `relay.rs:2017` | `return Ok(());`, inside the `MiddlewareApplyResult::Denied` arm opened at `:2001`, after `send_middleware_rejection_response` at `:2009` |
+| Upstream write | `relay.rs:2088` | `relay_http_request_with_credential_rejection(` |
+| `Upgrade` omission | `l7/middleware.rs:828` | `fn safe_middleware_headers`, called on the request path at `:616`, filter drops `connection` at `:857` and `upgrade` at `:862` |
+
+### The observation window, stated
+
+"Zero upstream bytes" is one 200 ms read of the upstream pipe, taken after the client already has the denial
+response. It proves zero HTTP request or application bytes reached the upstream inside that window. It says
+nothing about whether a TCP connection was created. A forward that arrived later than 200 ms would not be caught,
+and no test here drives a delayed forward. The read uses a 32-byte buffer, so the reported number saturates at
+32: it separates zero from nonzero rather than counting a whole forward.
+
+### The metric proven live
+
+Mutation M1b in the `/tmp` OpenShell checkout only, never committed, reverted with the revert proven by SHA-256.
+At the `MiddlewareApplyResult::Denied` arm inside `relay_rest`, the 53-byte request line was written to upstream
+before the rejection response.
+
+```
+$ APS_MW_G1_RUNS=1 node scripts/run-g1.mjs
+EXIT=1
+run  1  green exit=0 ran=true  red exit=101 ran=false APS_UPSTREAM_BYTES_AFTER_DENY=32 zero_upstream_bytes=false
+...
+assertion `left == right` failed: the post-denial read of the upstream pipe observed bytes
+  left: Some(32)
+ right: Some(0)
+RED runs with zero upstream bytes: 0/1   (observation missing in 0)
+GATE G1: FAIL
+```
+
+The runner's own metric reported the forward, and the gate failed on the metric's own assertion rather than
+somewhere else. Full capture in `evidence/metric-live-cleanup-20260930.txt`.
+
+After the revert, `shasum -a 256` matched the pre-mutation file byte for byte
+(`dafa9ba0c8b170fee9825f55d8b7d0dcc0735cda9daec55cef400ab3b2a52805`), the tree rebuilt at exit 0, and
+`APS_MW_G1_RUNS=1 node scripts/run-g1.mjs` returned exit 0 with `APS_UPSTREAM_BYTES_AFTER_DENY=0` and
+`GATE G1: PASS`.
+
+### Rerun against the final tree
+
+```
+$ node scripts/run-g1.mjs
+EXIT=0
+GREEN passed 25/25
+RED   passed 25/25
+RED runs with zero upstream bytes: 25/25   (observation missing in 0)
+total runs: 50/50   elapsed 3528.0s
+GATE G1: PASS
+```
+
+Every one of the 25 RED rows read `APS_UPSTREAM_BYTES_AFTER_DENY=0 zero_upstream_bytes=true`. Full capture in
+`evidence/g1-50-runs-cleanup-20260930.txt`.
+
+```
+$ node scripts/run-p2.mjs
+EXIT=0
+P2 SUITE: PASS (10 passes of 12 cases, plus the latency case once)
+```
+
+All 12 cases 10/10. Every deny case reported `APS_UPSTREAM_BYTES_AFTER_DENY=0`. The case 6 control, which is the
+one case that is meant to reach upstream, reported `none`, meaning it made no post-denial read, which is what its
+`denyReads: 0` declares. The latency case reported `post_denial_reads=0` and `allowed_decisions=200/200`, with
+median 830 us and p95 978 us on this machine. Full capture in `evidence/p2-10-passes-cleanup-20260930.txt`.
+
+`git diff --stat -- fixtures/` is empty: no fixture was regenerated or changed by this cleanup. The harness patch
+was regenerated from the checkout at 494 insertions, 0 deletions, one file, and `git apply --check` returns exit 0
+against a pristine `ba16b9f`.
+
+### What this cleanup is not
+
+Our own cleanup of our own build. Not external validation, not an independent implementation, not OpenShell
+maintainer acceptance. The strategy reset's external validation signal is still unmet.
