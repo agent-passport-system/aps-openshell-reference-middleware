@@ -1,0 +1,26 @@
+{
+  "_comment": "CANDIDATE. An adapter observation, not an APS conformance vector. It records what the tested OpenShell relay did when the neutral APS decision above was DENY at the supervisor middleware boundary. OpenShell behavior is deliberately not part of the neutral vector s expected APS result.",
+  "status": "CANDIDATE",
+  "observation_id": "openshell-supervisor-middleware-adapter-case-a",
+  "refers_to_vector": "aps-authority-delegation-case-a-ancestor-revoked",
+  "refers_to_case": "ancestor-revoked",
+  "host": {
+    "project": "NVIDIA/OpenShell",
+    "commit": "ba16b9f2c7c59899532628ffa6cd26d37bffd477",
+    "enforcement_point": "crates/openshell-supervisor-network/src/l7/relay.rs:1208",
+    "denial_return": "crates/openshell-supervisor-network/src/l7/relay.rs:1240",
+    "upstream_write": "crates/openshell-supervisor-network/src/l7/relay.rs:1305"
+  },
+  "posture": {
+    "attachment": "network_middlewares entry, on_error: fail_closed, endpoints.include: [\"**\"]",
+    "endpoint": "host api.example.test port 8080 protocol rest enforcement enforce, L7 rule allows GET /v1/**",
+    "identity": "operator-configured sandbox_id -> APS agent_id mapping; not a cryptographic binding"
+  },
+  "observed": "When the neutral decision is DENY at the supervisor middleware boundary, the tested relay sends zero HTTP request bytes upstream and returns 403 with error=middleware_denied, middleware=aps-authority, reason_code=aps_authority_revoked.",
+  "not_observed": "Whether a TCP connection to the upstream was created. The zero-bytes result is about HTTP request and application bytes received by the upstream, nothing more.",
+  "runs": {
+    "green": 25,
+    "red": 25,
+    "red_runs_with_zero_upstream_bytes": 25
+  }
+}

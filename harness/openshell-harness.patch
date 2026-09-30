@@ -1,8 +1,8 @@
 diff --git a/crates/openshell-supervisor-network/src/l7/relay.rs b/crates/openshell-supervisor-network/src/l7/relay.rs
-index 0aa4532..1b7a170 100644
+index 0aa4532..85e5c5f 100644
 --- a/crates/openshell-supervisor-network/src/l7/relay.rs
 +++ b/crates/openshell-supervisor-network/src/l7/relay.rs
-@@ -11706,4 +11706,408 @@ network_policies:
+@@ -11706,4 +11706,461 @@ network_policies:
              .unwrap()
              .unwrap();
      }
@@ -285,6 +285,10 @@ index 0aa4532..1b7a170 100644
 +    const APS_GET: &[u8] =
 +        b"GET /v1/messages HTTP/1.1\r\nHost: api.example.test\r\nConnection: close\r\n\r\n";
 +
++    const APS_UPGRADE: &[u8] = b"GET /v1/messages HTTP/1.1\r\nHost: api.example.test\r\n\
++Upgrade: websocket\r\nSec-WebSocket-Version: 13\r\n\
++Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nConnection: close\r\n\r\n";
++
 +    /// GREEN. A valid chain: the child's GET reaches upstream exactly once and
 +    /// the response is relayed back.
 +    #[tokio::test]
@@ -327,11 +331,8 @@ index 0aa4532..1b7a170 100644
 +        install_aps_sandbox_identity();
 +        let middleware = ApsMiddlewareProcess::spawn();
 +        let (engine, generation, config, ctx) = aps_relay_context(&middleware.endpoint).await;
-+        let request = b"GET /v1/messages HTTP/1.1\r\nHost: api.example.test\r\n\
-+Upgrade: websocket\r\nSec-WebSocket-Version: 13\r\n\
-+Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nConnection: close\r\n\r\n";
 +        let (response, forwarded) =
-+            aps_request(&config, aps_tunnel(&engine, generation), &ctx, request, false).await;
++            aps_request(&config, aps_tunnel(&engine, generation), &ctx, APS_UPGRADE, false).await;
 +        assert_aps_denied(&response, "aps_upgrade_not_permitted");
 +        assert!(forwarded.is_empty(), "upstream received {} bytes", forwarded.len());
 +    }
@@ -409,5 +410,57 @@ index 0aa4532..1b7a170 100644
 +            assert!(response.contains("204 No Content"), "{response}");
 +            assert!(!forwarded.is_empty());
 +        }
++    }
++
++    /// Negative control for the upgrade case. With the middleware's refusal
++    /// switched off, the same upgrade request does reach upstream, so the deny
++    /// in `aps_middleware_denies_upgrade_request_before_upstream` is what stops
++    /// it rather than some other part of the relay.
++    #[tokio::test]
++    async fn aps_upgrade_reaches_upstream_when_middleware_allows_it() {
++        install_aps_sandbox_identity();
++        // Set by the runner for this control only.
++        assert_eq!(
++            std::env::var("APS_MW_ALLOW_UPGRADES").as_deref(),
++            Ok("1"),
++            "this control requires the middleware's upgrade refusal to be off"
++        );
++        let middleware = ApsMiddlewareProcess::spawn();
++        let (engine, generation, config, ctx) = aps_relay_context(&middleware.endpoint).await;
++
++        let (mut app, mut relay_client) = tokio::io::duplex(8192);
++        let (mut relay_upstream, mut upstream) = tokio::io::duplex(8192);
++        let tunnel = aps_tunnel(&engine, generation);
++        let relay_config = config.clone();
++        let relay_ctx = ctx.clone();
++        let relay = tokio::spawn(async move {
++            relay_with_inspection(
++                &relay_config,
++                tunnel,
++                &mut relay_client,
++                &mut relay_upstream,
++                &relay_ctx,
++            )
++            .await
++        });
++
++        app.write_all(APS_UPGRADE).await.unwrap();
++
++        let mut buffer = [0u8; 1024];
++        let n = tokio::time::timeout(
++            std::time::Duration::from_secs(10),
++            upstream.read(&mut buffer),
++        )
++        .await
++        .expect("without the middleware refusal the upgrade request should reach upstream")
++        .unwrap();
++        let forwarded = String::from_utf8_lossy(&buffer[..n]).to_string();
++        println!("aps-harness: upstream received {n} bytes without the refusal");
++        assert!(n > 0);
++        assert!(forwarded.starts_with("GET /v1/messages"), "{forwarded}");
++
++        drop(app);
++        drop(upstream);
++        let _ = tokio::time::timeout(std::time::Duration::from_secs(10), relay).await;
 +    }
  }

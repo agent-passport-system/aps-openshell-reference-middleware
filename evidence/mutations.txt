@@ -1,0 +1,22 @@
+=== Mutation checks on the RED assertions (both MUST fail) ===
+
+--- Mutation 1: run the RED test with nothing revoked ---
+test l7::relay::tests::aps_middleware_denies_before_upstream ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1418 filtered out; finished in 10.28s
+thread 'l7::relay::tests::aps_middleware_denies_before_upstream' (67835638) panicked at crates/openshell-supervisor-network/src/l7/relay.rs:11957:10:
+[aps_middleware_denies_before_upstream] exit=101 ran=false selectedNone=false ok=false
+driver exit: 0
+
+--- Mutation 2: run the RED test expecting the wrong reason_code ---
+test l7::relay::tests::aps_middleware_denies_before_upstream ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1418 filtered out; finished in 0.28s
+thread 'l7::relay::tests::aps_middleware_denies_before_upstream' (67837340) panicked at crates/openshell-supervisor-network/src/l7/relay.rs:11902:9:
+  left: String("aps_authority_revoked")
+ right: "aps_authority_expired"
+[aps_middleware_denies_before_upstream] exit=101 ran=false selectedNone=false ok=false
+driver exit: 0
+
+--- Control: the unmutated RED test ---
+test l7::relay::tests::aps_middleware_denies_before_upstream ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1418 filtered out; finished in 0.28s
+[aps_middleware_denies_before_upstream] exit=0 ran=true selectedNone=false ok=true

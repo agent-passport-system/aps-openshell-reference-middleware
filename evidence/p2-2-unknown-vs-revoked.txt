@@ -1,0 +1,18 @@
+=== P2 case 2 evidence: unresolved revocation recorded as unknown, never as revoked ===
+  test exit=0 ran=true ok=true
+  --- missing: middleware decision record ---
+    decision=deny reason_code=aps_revocation_unknown aps_state=indeterminate aps_code=REVOCATION_UNKNOWN
+    revocation_unresolved=revocation state: unreadable (ENOENT)
+  test exit=0 ran=true ok=true
+  --- malformed: middleware decision record ---
+    decision=deny reason_code=aps_revocation_unknown aps_state=indeterminate aps_code=REVOCATION_UNKNOWN
+    revocation_unresolved=revocation state: malformed JSON
+  test exit=0 ran=true ok=true
+  --- stale: middleware decision record ---
+    decision=deny reason_code=aps_revocation_unknown aps_state=indeterminate aps_code=REVOCATION_UNKNOWN
+    revocation_unresolved=revocation state: stamped 212901191999ms ago, outside the middleware freshness bound of 300000ms
+
+=== the RED case for contrast: an actually revoked ancestor ===
+  test exit=0 ran=true ok=true
+    decision=deny reason_code=aps_authority_revoked aps_state=invalid aps_code=REVOKED
+    revocation_unresolved=None

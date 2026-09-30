@@ -27,6 +27,10 @@ const stateDir = requiredEnv('APS_MW_STATE')
 const revocationMaxAgeMs = Number(process.env.APS_MW_REVOCATION_MAX_AGE_MS ?? 300000)
 const decisionLog = process.env.APS_MW_DECISION_LOG ?? null
 const port = Number(process.env.APS_MW_PORT ?? 0)
+// Negative control only: with this set, the middleware does not refuse a
+// WebSocket upgrade, so a test can show where the request goes without the
+// refusal. Never set in any enforcing case.
+const allowUpgrades = process.env.APS_MW_ALLOW_UPGRADES === '1'
 
 function requiredEnv(name) {
   const value = process.env[name]
@@ -112,6 +116,7 @@ const service = {
         stateDir,
         nowMs: Date.now(),
         revocationMaxAgeMs,
+        allowUpgrades,
       })
     } catch (error) {
       // Any exception denies.
@@ -125,6 +130,11 @@ const service = {
     const elapsedUs = Number(process.hrtime.bigint() - startedNs) / 1000
     recordDecision({
       request_id: request?.context?.request_id ?? '',
+      // Header names only. OpenShell already omits credential, routing, framing
+      // and hop-by-hop fields, so this records what the middleware can actually
+      // see, which is the basis for the upgrade check below.
+      header_names: headers.map(h => h.name),
+      scheme: request?.target?.scheme ?? '',
       sandbox_id: sandboxId,
       method: request?.target?.method ?? '',
       path: request?.target?.path ?? '',

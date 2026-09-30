@@ -1,0 +1,18 @@
+=== case 5 observed behavior, verbose ===
+
+running 1 test
+test l7::relay::tests::aps_middleware_registered_but_unreachable_denies_before_upstream ... aps-harness: killed middleware pid 52422
+aps-harness: response after kill: HTTP/1.1 403 Forbidden
+Content-Type: application/json
+Content-Length: 229
+X-OpenShell-Policy: rest_api
+Connection: close
+
+{"error":"middleware_failed","detail":"Request could not be processed by configured middleware","policy":"rest_api","layer":"l7","method":"GET","path":"/v1/messages","host":"api.example.test","port":8080,"binary":"/usr/bin/curl"}
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1418 filtered out; finished in 0.28s
+
+exit=0 ran=true ok=true
+=== middleware decision log for case 5 (one allow, then nothing: the process was gone) ===
+{"request_id":"bf7b81c5-e6ad-424d-b373-5a234a723d9d","header_names":[],"scheme":"https","sandbox_id":"sbx-aps-case-a-child","method":"GET","path":"/v1/messages","decision":"allow","reason_code":"","aps_state":"","aps_code":"","revocation_unresolved":null,"detail":"aps=valid agent=aps:agent:test-child-agent","decision_us":5317.5}

@@ -1,0 +1,32 @@
+pass  1/10  p2-1-static-narrowing=ok  p2-2a-revocation-missing=ok  p2-2b-revocation-unreadable=ok  p2-2c-revocation-malformed=ok  p2-2d-revocation-stale=ok  p2-3-expired-link=ok  p2-4a-tampered=ok  p2-4b-wrong-signature=ok  p2-5-middleware-unreachable=ok  p2-6-upgrade-denied=ok  p2-6-control-upgrade-reaches-upstream=ok  p2-7-revoked-between-requests=ok
+pass  2/10  p2-1-static-narrowing=ok  p2-2a-revocation-missing=ok  p2-2b-revocation-unreadable=ok  p2-2c-revocation-malformed=ok  p2-2d-revocation-stale=ok  p2-3-expired-link=ok  p2-4a-tampered=ok  p2-4b-wrong-signature=ok  p2-5-middleware-unreachable=ok  p2-6-upgrade-denied=ok  p2-6-control-upgrade-reaches-upstream=ok  p2-7-revoked-between-requests=ok
+pass  3/10  p2-1-static-narrowing=ok  p2-2a-revocation-missing=ok  p2-2b-revocation-unreadable=ok  p2-2c-revocation-malformed=ok  p2-2d-revocation-stale=ok  p2-3-expired-link=ok  p2-4a-tampered=ok  p2-4b-wrong-signature=ok  p2-5-middleware-unreachable=ok  p2-6-upgrade-denied=ok  p2-6-control-upgrade-reaches-upstream=ok  p2-7-revoked-between-requests=ok
+pass  4/10  p2-1-static-narrowing=ok  p2-2a-revocation-missing=ok  p2-2b-revocation-unreadable=ok  p2-2c-revocation-malformed=ok  p2-2d-revocation-stale=ok  p2-3-expired-link=ok  p2-4a-tampered=ok  p2-4b-wrong-signature=ok  p2-5-middleware-unreachable=ok  p2-6-upgrade-denied=ok  p2-6-control-upgrade-reaches-upstream=ok  p2-7-revoked-between-requests=ok
+pass  5/10  p2-1-static-narrowing=ok  p2-2a-revocation-missing=ok  p2-2b-revocation-unreadable=ok  p2-2c-revocation-malformed=ok  p2-2d-revocation-stale=ok  p2-3-expired-link=ok  p2-4a-tampered=ok  p2-4b-wrong-signature=ok  p2-5-middleware-unreachable=ok  p2-6-upgrade-denied=ok  p2-6-control-upgrade-reaches-upstream=ok  p2-7-revoked-between-requests=ok
+pass  6/10  p2-1-static-narrowing=ok  p2-2a-revocation-missing=ok  p2-2b-revocation-unreadable=ok  p2-2c-revocation-malformed=ok  p2-2d-revocation-stale=ok  p2-3-expired-link=ok  p2-4a-tampered=ok  p2-4b-wrong-signature=ok  p2-5-middleware-unreachable=ok  p2-6-upgrade-denied=ok  p2-6-control-upgrade-reaches-upstream=ok  p2-7-revoked-between-requests=ok
+pass  7/10  p2-1-static-narrowing=ok  p2-2a-revocation-missing=ok  p2-2b-revocation-unreadable=ok  p2-2c-revocation-malformed=ok  p2-2d-revocation-stale=ok  p2-3-expired-link=ok  p2-4a-tampered=ok  p2-4b-wrong-signature=ok  p2-5-middleware-unreachable=ok  p2-6-upgrade-denied=ok  p2-6-control-upgrade-reaches-upstream=ok  p2-7-revoked-between-requests=ok
+pass  8/10  p2-1-static-narrowing=ok  p2-2a-revocation-missing=ok  p2-2b-revocation-unreadable=ok  p2-2c-revocation-malformed=ok  p2-2d-revocation-stale=ok  p2-3-expired-link=ok  p2-4a-tampered=ok  p2-4b-wrong-signature=ok  p2-5-middleware-unreachable=ok  p2-6-upgrade-denied=ok  p2-6-control-upgrade-reaches-upstream=ok  p2-7-revoked-between-requests=ok
+pass  9/10  p2-1-static-narrowing=ok  p2-2a-revocation-missing=ok  p2-2b-revocation-unreadable=ok  p2-2c-revocation-malformed=ok  p2-2d-revocation-stale=ok  p2-3-expired-link=ok  p2-4a-tampered=ok  p2-4b-wrong-signature=ok  p2-5-middleware-unreachable=ok  p2-6-upgrade-denied=ok  p2-6-control-upgrade-reaches-upstream=ok  p2-7-revoked-between-requests=ok
+pass 10/10  p2-1-static-narrowing=ok  p2-2a-revocation-missing=ok  p2-2b-revocation-unreadable=ok  p2-2c-revocation-malformed=ok  p2-2d-revocation-stale=ok  p2-3-expired-link=ok  p2-4a-tampered=ok  p2-4b-wrong-signature=ok  p2-5-middleware-unreachable=ok  p2-6-upgrade-denied=ok  p2-6-control-upgrade-reaches-upstream=ok  p2-7-revoked-between-requests=ok
+
+Per-case tally over all passes:
+  ok    p2-1-static-narrowing  10/10  Static monotonic narrowing: child requests authority outside the signed parent authority
+  ok    p2-2a-revocation-missing  10/10  Revocation state unresolvable: file missing
+  ok    p2-2b-revocation-unreadable  10/10  Revocation state unresolvable: file unreadable
+  ok    p2-2c-revocation-malformed  10/10  Revocation state unresolvable: file malformed
+  ok    p2-2d-revocation-stale  10/10  Revocation state unresolvable: outside the middleware local freshness rule
+  ok    p2-3-expired-link  10/10  Expired link in the chain
+  ok    p2-4a-tampered  10/10  Tampered chain: one byte changed in a signed field
+  ok    p2-4b-wrong-signature  10/10  Wrong signature: child record signed by a key that is not the issuer
+  ok    p2-5-middleware-unreachable  10/10  Middleware registered, one request allowed, process killed, next request observed
+  ok    p2-6-upgrade-denied  10/10  WebSocket upgrade request reaches the middleware and is denied before upstream
+  ok    p2-6-control-upgrade-reaches-upstream  10/10  Control for case 6: with the refusal off, the same upgrade request does reach upstream
+  ok    p2-7-revoked-between-requests  10/10  Revocation between two requests of the same session
+
+p2-8-latency: Middleware decision latency over 200 allowed requests, as measured on this machine
+  ok    exit=0 ran=true allowed_decisions=200/200
+  middleware decision time over 200 allowed requests, measured on this machine:
+    median 847 us   p95 1014 us   min 791 us   max 4346 us
+
+P2 SUITE: PASS (10 passes of 12 cases, plus the latency case once)
+sample command: cargo test -p openshell-supervisor-network --lib l7::relay::tests::aps_middleware_denies_before_upstream -- --exact --nocapture --test-threads=1

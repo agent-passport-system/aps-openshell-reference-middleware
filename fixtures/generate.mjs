@@ -5,7 +5,7 @@
 // agent, a valid root->parent->child chain, and the variant chains and
 // revocation states the P1 and P2 cases need.
 
-import { mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -82,9 +82,25 @@ function issue({ parentId, issuer, subject, verificationMethod, issuedAt, nonce,
   return { ...unsigned, signature }
 }
 
-const rootKeys = generateKeyPair()
-const parentKeys = generateKeyPair()
-const childKeys = generateKeyPair()
+// Keys are generated ONCE and committed. A rerun reuses the committed keys so the
+// whole fixture set is byte-reproducible, which is what a separate verification
+// job needs. Pass --rotate-keys to mint new ones on purpose.
+const ROTATE = process.argv.includes('--rotate-keys')
+const KEYS_PATH = join(OUT, 'keys.TEST-ONLY.json')
+let rootKeys, parentKeys, childKeys
+if (!ROTATE && existsSync(KEYS_PATH)) {
+  const committed = JSON.parse(readFileSync(KEYS_PATH, 'utf8'))
+  const pick = (k) => ({ privateKey: committed[k].privateKey, publicKey: committed[k].publicKey })
+  rootKeys = pick('root')
+  parentKeys = pick('parent')
+  childKeys = pick('child')
+  console.log('reusing the committed TEST ONLY keys (pass --rotate-keys to mint new ones)')
+} else {
+  rootKeys = generateKeyPair()
+  parentKeys = generateKeyPair()
+  childKeys = generateKeyPair()
+  console.log('minted new TEST ONLY keys')
+}
 
 const ROOT_VM = `${ROOT}#key-1`
 const PARENT_VM = `${PARENT}#key-1`

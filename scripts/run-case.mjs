@@ -18,13 +18,16 @@ export function runCase({
   stampNow = true,
   expectReason = null,
   swapTo = null,
+  swapSource = null,
+  unreadableRevocations = false,
+  allowUpgrades = false,
   latencyRequests = null,
   decisionLog = null,
   tag = '',
 }) {
   mkdirSync(RUNS_DIR, { recursive: true })
   const stateDir = join(RUNS_DIR, `state-${test}-${tag || 'x'}-${process.pid}-${Date.now()}`)
-  buildStateDir(stateDir, { chain, revocations, stampNow })
+  buildStateDir(stateDir, { chain, revocations, stampNow, swapSource, unreadableRevocations })
 
   const env = {
     ...process.env,
@@ -41,6 +44,7 @@ export function runCase({
   }
   if (latencyRequests !== null) env.APS_MW_LATENCY_REQUESTS = String(latencyRequests)
   if (decisionLog !== null) env.APS_MW_DECISION_LOG = decisionLog
+  if (allowUpgrades) env.APS_MW_ALLOW_UPGRADES = '1'
 
   const fullName = `l7::relay::tests::${test}`
   const args = [

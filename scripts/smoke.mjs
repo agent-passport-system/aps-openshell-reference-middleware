@@ -62,8 +62,14 @@ r = await evaluate('sbx-not-in-mapping')
 check('unmapped sandbox_id', r.decision, 'DECISION_DENY')
 check('unmapped reason_code', r.reason_code, 'aps_unknown_sandbox')
 
+// OpenShell omits `Upgrade` and `Connection` from what a middleware sees, so the
+// refusal keys on the RFC 6455 handshake headers, which do reach the middleware.
 r = await evaluate(SBX, [{ name: 'upgrade', value: 'websocket' }])
-check('upgrade header', r.reason_code, 'aps_upgrade_not_permitted')
+check('bare upgrade header is not the signal', r.decision, 'DECISION_ALLOW')
+r = await evaluate(SBX, [{ name: 'sec-websocket-key', value: 'dGhlIHNhbXBsZSBub25jZQ==' }])
+check('sec-websocket-key', r.reason_code, 'aps_upgrade_not_permitted')
+r = await evaluate(SBX, [{ name: 'sec-websocket-version', value: '13' }])
+check('sec-websocket-version', r.reason_code, 'aps_upgrade_not_permitted')
 
 writeRevocations(stateDir, 'parent-grant-revoked')
 r = await evaluate(SBX)

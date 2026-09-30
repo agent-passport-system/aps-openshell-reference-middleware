@@ -29,13 +29,31 @@ const DENY = (reasonCode, detail, extra = {}) => ({ decision: 'deny', reasonCode
  * mapped through the operator-owned mapping file. Request content is never used
  * as the authorization identity.
  */
-export function evaluateRequest({ sandboxId, headers, stateDir, nowMs, revocationMaxAgeMs }) {
-  // An upgrade request closes the WebSocket binary and raw post-upgrade
-  // residual paths for this deployment posture. It is refused before any
-  // authority question, so the refusal does not depend on chain state.
-  const upgrade = headers.find(h => h.name === 'upgrade')
-  if (upgrade !== undefined) {
-    return DENY('aps_upgrade_not_permitted', `upgrade requested: ${upgrade.value}`)
+export function evaluateRequest({ sandboxId, headers, stateDir, nowMs, revocationMaxAgeMs, allowUpgrades = false }) {
+  // Refuse a WebSocket upgrade attempt, which closes the WebSocket
+  // agent-to-server binary frame and raw post-upgrade residual paths for this
+  // deployment posture. Refused before any authority question, so the refusal
+  // does not depend on chain state.
+  //
+  // Detected from the RFC 6455 handshake headers, not from `Upgrade`. OpenShell
+  // omits `Upgrade` and `Connection` from what a middleware sees
+  // (crates/openshell-supervisor-middleware/src/headers.rs:298 and :303 at
+  // ba16b9f) and hands the HTTP request stage a hardcoded "https" scheme
+  // (crates/openshell-supervisor-network/src/l7/middleware.rs:524), so neither
+  // the header nor the scheme can carry the signal. `Sec-WebSocket-Key` and
+  // `Sec-WebSocket-Version` are end-to-end headers and do reach the middleware;
+  // that was confirmed by observing a real upgrade request through the relay.
+  //
+  // This catches an RFC 6455 WebSocket handshake. It does NOT catch a
+  // non-WebSocket upgrade, which carries no Sec-WebSocket-* header and which
+  // this middleware therefore cannot see at all.
+  if (!allowUpgrades) {
+    const handshake = headers.find(
+      h => h.name === 'sec-websocket-key' || h.name === 'sec-websocket-version',
+    )
+    if (handshake !== undefined) {
+      return DENY('aps_upgrade_not_permitted', `websocket handshake header present: ${handshake.name}`)
+    }
   }
 
   const now = canonicalNow(nowMs)
