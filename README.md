@@ -1,7 +1,10 @@
 # APS OpenShell reference enforcement middleware
 
-Local only. Never published, never pushed. Nothing here has been offered to NVIDIA/OpenShell,
-and this is not an OpenShell integration or a supported integration.
+Status: BUILT + REPRODUCED + CLEANED. External validation: none yet.
+
+A reference implementation by the Agent Passport System project. It is not an OpenShell integration or a
+supported integration, and nothing here has been offered to or reviewed by NVIDIA/OpenShell. REPRODUCED means a
+fresh-clone rerun and hostile verification by the same project, not an independent implementation.
 
 ## The claim
 

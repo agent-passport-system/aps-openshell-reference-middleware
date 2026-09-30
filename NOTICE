@@ -1,0 +1,15 @@
+APS OpenShell reference enforcement middleware
+Copyright 2026 Tymofii Pidlisnyi (Agent Passport System)
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+It includes proto files copied verbatim from NVIDIA/OpenShell
+(https://github.com/NVIDIA/OpenShell) at commit
+ba16b9f2c7c59899532628ffa6cd26d37bffd477, under the Apache License,
+Version 2.0, with their SPDX headers preserved:
+  proto/supervisor_middleware.proto
+  proto/extension.proto
+Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES.
+
+harness/openshell-harness.patch adds test code to a local OpenShell checkout.
+It is not part of OpenShell and has not been offered to or reviewed by NVIDIA.

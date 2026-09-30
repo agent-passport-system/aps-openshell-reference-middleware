@@ -1,0 +1,10 @@
+# These fingerprints are the TEST ONLY fixture keys (fixtures/*.TEST-ONLY.json) and the public keys copied from them into the harness and the candidate vector. They are throwaway test material and never signed anything outside these tests.
+e54a9169bcb6c6e68e1cc4a2d2d83f453f4c34fc:harness/openshell-harness.patch:generic-api-key:290
+37a884cf944a1a8cc4b22037c262894a669c309c:fixtures/keys.TEST-ONLY.json:generic-api-key:6
+37a884cf944a1a8cc4b22037c262894a669c309c:fixtures/keys.TEST-ONLY.json:generic-api-key:12
+37a884cf944a1a8cc4b22037c262894a669c309c:fixtures/keys.TEST-ONLY.json:generic-api-key:17
+37a884cf944a1a8cc4b22037c262894a669c309c:fixtures/trust-anchors.TEST-ONLY.json:generic-api-key:10
+37a884cf944a1a8cc4b22037c262894a669c309c:fixtures/trust-anchors.TEST-ONLY.json:generic-api-key:11
+e54a9169bcb6c6e68e1cc4a2d2d83f453f4c34fc:vector/case-a-neutral-vector.CANDIDATE.json:generic-api-key:15
+e54a9169bcb6c6e68e1cc4a2d2d83f453f4c34fc:vector/case-a-neutral-vector.CANDIDATE.json:generic-api-key:16
+37a884cf944a1a8cc4b22037c262894a669c309c:harness/openshell-harness.patch:generic-api-key:332
