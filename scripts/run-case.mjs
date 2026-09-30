@@ -78,4 +78,17 @@ export function withRevokedSwapSource(stateDir) {
   return stateDir
 }
 
+/**
+ * Every `APS_UPSTREAM_BYTES_AFTER_DENY=<n>` value the harness printed, in order.
+ * The harness prints exactly one per post-denial read of the upstream pipe, and
+ * nothing else prints that key, so the count of matches is the count of
+ * observations that actually happened. A deny case with no match observed
+ * nothing: callers must treat that as a failure, never as a zero. Matched
+ * anywhere in the line, because the Rust test harness prefixes the first line of
+ * a test's output with "test <name> ... ".
+ */
+export function upstreamBytesAfterDeny(stdout) {
+  return [...(stdout ?? '').matchAll(/APS_UPSTREAM_BYTES_AFTER_DENY=(\d+)/g)].map(m => Number(m[1]))
+}
+
 export { FIXTURES }

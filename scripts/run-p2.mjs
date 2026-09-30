@@ -1,7 +1,10 @@
 // P2 hardening suite. One case per scenario, all through the same harness. Every
-// deny case asserts the decision and zero upstream bytes.
+// deny case asserts the decision, and the zero-byte result comes from the
+// harness's own post-denial read of the upstream pipe. `denyReads` is how many
+// of those reads a case makes: the count is checked, so a missing observation
+// fails the case instead of reading as zero.
 import { readFileSync, rmSync, existsSync } from 'node:fs'
-import { runCase } from './run-case.mjs'
+import { runCase, upstreamBytesAfterDeny } from './run-case.mjs'
 
 const DECISION_LOG = '/tmp/aps-mw-p2-decisions.jsonl'
 
@@ -92,7 +95,7 @@ const CASES = [
     title: 'Control for case 6: with the refusal off, the same upgrade request does reach upstream',
     test: 'aps_upgrade_reaches_upstream_when_middleware_allows_it',
     allowUpgrades: true,
-    allowsUpstream: true,
+    denyReads: 0,
   },
   {
     id: 'p2-7-revoked-between-requests',
@@ -123,8 +126,14 @@ function runOne(c, pass) {
   const decisions = decisionsFrom(log)
   const problems = []
   if (!r.ok) problems.push(`test did not pass (exit=${r.status} ran=${r.ran})`)
-  if (!c.allowsUpstream && /upstream received \d+ bytes/.test(r.stdout)) {
-    problems.push('upstream received bytes')
+  const upstreamBytes = upstreamBytesAfterDeny(r.stdout)
+  const expectedDenyReads = c.denyReads ?? 1
+  if (upstreamBytes.length !== expectedDenyReads) {
+    problems.push(
+      `expected ${expectedDenyReads} post-denial upstream read(s), the harness reported ${upstreamBytes.length}`,
+    )
+  } else if (upstreamBytes.some(n => n !== 0)) {
+    problems.push(`upstream received bytes after the denial: ${upstreamBytes.join(',')}`)
   }
   if (c.expectApsCode) {
     const denied = decisions.filter(d => d.decision === 'deny')
@@ -144,7 +153,7 @@ function runOne(c, pass) {
       problems.push('unresolved revocation was recorded as REVOKED')
     }
   }
-  return { ...r, id: c.id, title: c.title, decisions, problems, log }
+  return { ...r, id: c.id, title: c.title, decisions, problems, log, upstreamBytes }
 }
 
 const PASSES = Number(process.env.APS_MW_P2_PASSES ?? 10)
@@ -171,7 +180,13 @@ let allOk = true
 for (const c of CASES) {
   const n = tally.get(c.id)
   if (n !== PASSES) allOk = false
-  console.log(`  ${n === PASSES ? 'ok  ' : 'FAIL'}  ${c.id}  ${n}/${PASSES}  ${c.title}`)
+  const first = firstPassDetail.find(r => r.id === c.id)
+  const bytes = first?.upstreamBytes ?? []
+  const metric = bytes.length === 0 ? 'none' : bytes.join(',')
+  console.log(
+    `  ${n === PASSES ? 'ok  ' : 'FAIL'}  ${c.id}  ${n}/${PASSES}  ` +
+    `APS_UPSTREAM_BYTES_AFTER_DENY=${metric}  ${c.title}`,
+  )
 }
 
 // Case 8, run once: latency over allowed requests.
@@ -182,8 +197,11 @@ const lat = runCase({ ...LATENCY_CASE, label: LATENCY_CASE.id, decisionLog: latL
 const latDecisions = decisionsFrom(latLog)
 const allowed = latDecisions.filter(d => d.decision === 'allow').map(d => d.decision_us).sort((a, b) => a - b)
 const q = (p) => allowed.length === 0 ? NaN : allowed[Math.min(allowed.length - 1, Math.floor(p * allowed.length))]
-const latOk = lat.ok && allowed.length === LATENCY_CASE.latencyRequests
-console.log(`  ${latOk ? 'ok  ' : 'FAIL'}  exit=${lat.status} ran=${lat.ran} allowed_decisions=${allowed.length}/${LATENCY_CASE.latencyRequests}`)
+// Every request in the latency case is allowed, so the harness makes no
+// post-denial read and must print no observation line.
+const latBytes = upstreamBytesAfterDeny(lat.stdout)
+const latOk = lat.ok && allowed.length === LATENCY_CASE.latencyRequests && latBytes.length === 0
+console.log(`  ${latOk ? 'ok  ' : 'FAIL'}  exit=${lat.status} ran=${lat.ran} allowed_decisions=${allowed.length}/${LATENCY_CASE.latencyRequests} post_denial_reads=${latBytes.length}`)
 if (allowed.length > 0) {
   console.log(`  middleware decision time over ${allowed.length} allowed requests, measured on this machine:`)
   console.log(`    median ${q(0.5).toFixed(0)} us   p95 ${q(0.95).toFixed(0)} us   min ${allowed[0].toFixed(0)} us   max ${allowed.at(-1).toFixed(0)} us`)

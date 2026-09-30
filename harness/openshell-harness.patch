@@ -1,8 +1,8 @@
 diff --git a/crates/openshell-supervisor-network/src/l7/relay.rs b/crates/openshell-supervisor-network/src/l7/relay.rs
-index 0aa4532..85e5c5f 100644
+index 0aa4532..19cd777 100644
 --- a/crates/openshell-supervisor-network/src/l7/relay.rs
 +++ b/crates/openshell-supervisor-network/src/l7/relay.rs
-@@ -11706,4 +11706,461 @@ network_policies:
+@@ -11706,4 +11706,498 @@ network_policies:
              .unwrap()
              .unwrap();
      }
@@ -202,15 +202,22 @@ index 0aa4532..85e5c5f 100644
 +        assert_eq!(body["reason_code"], reason_code, "{body}");
 +    }
 +
-+    /// One request over the real relay. Returns the client-visible response and
-+    /// the bytes the upstream received.
++    /// One request over the real relay. Returns the client-visible response, the
++    /// bytes the upstream received on an allowed request, and, on a denied
++    /// request, how many bytes a real read of the upstream pipe observed after
++    /// the client already had the denial response.
++    ///
++    /// That third value is the only source of the zero-byte observation. It is
++    /// `Some` only when that read ran, it carries whatever the read returned,
++    /// and nothing else populates it. A caller that never sees a `Some` has no
++    /// zero-byte evidence, rather than a passing check.
 +    async fn aps_request(
 +        config: &L7EndpointConfig,
 +        tunnel_engine: TunnelPolicyEngine,
 +        ctx: &L7EvalContext,
 +        request: &[u8],
 +        expect_forwarded: bool,
-+    ) -> (String, Vec<u8>) {
++    ) -> (String, Vec<u8>, Option<usize>) {
 +        let (mut app, mut relay_client) = tokio::io::duplex(8192);
 +        let (mut relay_upstream, mut upstream) = tokio::io::duplex(8192);
 +        let config = config.clone();
@@ -258,19 +265,33 @@ index 0aa4532..85e5c5f 100644
 +        .unwrap();
 +        let response = String::from_utf8_lossy(&response_buffer[..n]).to_string();
 +
++        // The one real observation of upstream bytes on the deny path: a 200 ms
++        // read of the upstream pipe, taken after the client already has the
++        // denial response. It counts HTTP request and application bytes only,
++        // and says nothing about whether a TCP connection was created. A
++        // forward that arrived later than the window would not be seen.
++        let mut upstream_bytes_after_deny = None;
 +        if !expect_forwarded {
-+            // Zero HTTP request or application bytes received by the upstream.
-+            // This says nothing about whether a TCP connection was created.
 +            let mut upstream_request = [0u8; 32];
-+            let result = tokio::time::timeout(
++            let observed = match tokio::time::timeout(
 +                std::time::Duration::from_millis(200),
 +                upstream.read(&mut upstream_request),
 +            )
-+            .await;
-+            assert!(
-+                matches!(result, Err(_) | Ok(Ok(0))),
-+                "upstream should not receive request bytes"
-+            );
++            .await
++            {
++                // The window elapsed with nothing to read.
++                Err(_) => 0,
++                // Whatever the read returned, including a clean EOF at 0.
++                Ok(Ok(n)) => n,
++                Ok(Err(error)) => panic!("post-denial upstream read failed: {error}"),
++            };
++            // Machine-readable, and printed before any assertion so the value
++            // survives a run that then fails. The runners parse this key and
++            // treat its absence as a failure rather than as a zero. The leading
++            // newline breaks out of the test harness's own "test <name> ... "
++            // prefix so the key starts a line of its own.
++            println!("\nAPS_UPSTREAM_BYTES_AFTER_DENY={observed}");
++            upstream_bytes_after_deny = Some(observed);
 +        }
 +
 +        drop(app);
@@ -279,7 +300,7 @@ index 0aa4532..85e5c5f 100644
 +            .expect("relay should finish")
 +            .unwrap()
 +            .unwrap();
-+        (response, forwarded)
++        (response, forwarded, upstream_bytes_after_deny)
 +    }
 +
 +    const APS_GET: &[u8] =
@@ -296,7 +317,7 @@ index 0aa4532..85e5c5f 100644
 +        install_aps_sandbox_identity();
 +        let middleware = ApsMiddlewareProcess::spawn();
 +        let (engine, generation, config, ctx) = aps_relay_context(&middleware.endpoint).await;
-+        let (response, forwarded) =
++        let (response, forwarded, _) =
 +            aps_request(&config, aps_tunnel(&engine, generation), &ctx, APS_GET, true).await;
 +        assert!(response.contains("204 No Content"), "{response}");
 +        let forwarded = String::from_utf8_lossy(&forwarded);
@@ -317,10 +338,14 @@ index 0aa4532..85e5c5f 100644
 +        let reason_code = std::env::var("APS_MW_EXPECT_REASON").expect("APS_MW_EXPECT_REASON");
 +        let middleware = ApsMiddlewareProcess::spawn();
 +        let (engine, generation, config, ctx) = aps_relay_context(&middleware.endpoint).await;
-+        let (response, forwarded) =
++        let (response, _, upstream_bytes_after_deny) =
 +            aps_request(&config, aps_tunnel(&engine, generation), &ctx, APS_GET, false).await;
 +        assert_aps_denied(&response, &reason_code);
-+        assert!(forwarded.is_empty(), "upstream received {} bytes", forwarded.len());
++        assert_eq!(
++            upstream_bytes_after_deny,
++            Some(0),
++            "the post-denial read of the upstream pipe observed bytes"
++        );
 +    }
 +
 +    /// P2 case 6. An upgrade request crosses the middleware and is denied before
@@ -331,10 +356,14 @@ index 0aa4532..85e5c5f 100644
 +        install_aps_sandbox_identity();
 +        let middleware = ApsMiddlewareProcess::spawn();
 +        let (engine, generation, config, ctx) = aps_relay_context(&middleware.endpoint).await;
-+        let (response, forwarded) =
++        let (response, _, upstream_bytes_after_deny) =
 +            aps_request(&config, aps_tunnel(&engine, generation), &ctx, APS_UPGRADE, false).await;
 +        assert_aps_denied(&response, "aps_upgrade_not_permitted");
-+        assert!(forwarded.is_empty(), "upstream received {} bytes", forwarded.len());
++        assert_eq!(
++            upstream_bytes_after_deny,
++            Some(0),
++            "the post-denial read of the upstream pipe observed bytes"
++        );
 +    }
 +
 +    /// P2 case 7. Revocation between two requests of the same session: the first
@@ -349,17 +378,21 @@ index 0aa4532..85e5c5f 100644
 +        let middleware = ApsMiddlewareProcess::spawn();
 +        let (engine, generation, config, ctx) = aps_relay_context(&middleware.endpoint).await;
 +
-+        let (first, forwarded) =
++        let (first, forwarded, _) =
 +            aps_request(&config, aps_tunnel(&engine, generation), &ctx, APS_GET, true).await;
 +        assert!(first.contains("204 No Content"), "{first}");
 +        assert!(!forwarded.is_empty());
 +
 +        std::fs::copy(&swap_from, &swap_to).expect("revoke the ancestor grant between requests");
 +
-+        let (second, forwarded) =
++        let (second, _, upstream_bytes_after_deny) =
 +            aps_request(&config, aps_tunnel(&engine, generation), &ctx, APS_GET, false).await;
 +        assert_aps_denied(&second, "aps_authority_revoked");
-+        assert!(forwarded.is_empty(), "upstream received {} bytes", forwarded.len());
++        assert_eq!(
++            upstream_bytes_after_deny,
++            Some(0),
++            "the post-denial read of the upstream pipe observed bytes"
++        );
 +    }
 +
 +    /// P2 case 5. Registered but unreachable, distinct from never registered.
@@ -372,7 +405,7 @@ index 0aa4532..85e5c5f 100644
 +        let pid = middleware.pid();
 +        let (engine, generation, config, ctx) = aps_relay_context(&middleware.endpoint).await;
 +
-+        let (first, forwarded) =
++        let (first, forwarded, _) =
 +            aps_request(&config, aps_tunnel(&engine, generation), &ctx, APS_GET, true).await;
 +        assert!(first.contains("204 No Content"), "{first}");
 +        assert!(!forwarded.is_empty());
@@ -380,7 +413,7 @@ index 0aa4532..85e5c5f 100644
 +        middleware.kill_and_reap();
 +        println!("aps-harness: killed middleware pid {pid}");
 +
-+        let (second, forwarded) =
++        let (second, _, upstream_bytes_after_deny) =
 +            aps_request(&config, aps_tunnel(&engine, generation), &ctx, APS_GET, false).await;
 +        // Observed, not assumed: record what a fail-closed chain actually does
 +        // when its registered service has gone away.
@@ -389,7 +422,11 @@ index 0aa4532..85e5c5f 100644
 +        let (_, body) = second.split_once("\r\n\r\n").expect("HTTP response");
 +        let body: serde_json::Value = serde_json::from_str(body).expect("JSON response");
 +        assert_eq!(body["error"], "middleware_failed", "{body}");
-+        assert!(forwarded.is_empty(), "upstream received {} bytes", forwarded.len());
++        assert_eq!(
++            upstream_bytes_after_deny,
++            Some(0),
++            "the post-denial read of the upstream pipe observed bytes"
++        );
 +    }
 +
 +    /// P2 case 8. Middleware decision latency over allowed requests, measured on
@@ -405,7 +442,7 @@ index 0aa4532..85e5c5f 100644
 +        let middleware = ApsMiddlewareProcess::spawn();
 +        let (engine, generation, config, ctx) = aps_relay_context(&middleware.endpoint).await;
 +        for _ in 0..count {
-+            let (response, forwarded) =
++            let (response, forwarded, _) =
 +                aps_request(&config, aps_tunnel(&engine, generation), &ctx, APS_GET, true).await;
 +            assert!(response.contains("204 No Content"), "{response}");
 +            assert!(!forwarded.is_empty());
