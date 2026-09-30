@@ -21,3 +21,7 @@ Date started: 2026-09-29 (Day 225).
 | 20:13:58 | P2 suite PASS: 10/10 passes, all 12 cases. Latency over 200 allowed requests: median 836us p95 981us. |
 | 20:13:58 | GATE G1 rerun against final code PASS: 50/50, zero upstream bytes in all 25 RED runs, elapsed 536.1s. |
 | 20:13:58 | P4 skipped: no container runtime, not installed per rules. docker/podman/colima all absent; OpenShell VM driver is Linux only. |
+| 21:11:46 | P3 artifacts written: README.md, EVIDENCE.md, vector/ (2 CANDIDATE artifacts + a standalone verifier). Harness patch regenerated at 457 lines and confirmed to apply cleanly to a pristine ba16b9f checkout. |
+| 21:11:46 | Caught before the final commit: rerunning fixtures/generate.mjs rotated the committed keys. Restored the exact fixtures every run used, then made the generator reuse committed keys so the set is byte-reproducible. |
+| 21:11:46 | Final G1 rerun against the final tree: 50/50 PASS, 629.2s. Final P2 rerun: 12 cases x 10 passes PASS, latency median 847us p95 1014us. |
+| 21:11:46 | Commits 37a884c (G0+G1) and e54a916 (P2+artifacts), both signed G, both with Signed-off-by, no AI trailer, no remotes. Handoff written. BUILT. |
