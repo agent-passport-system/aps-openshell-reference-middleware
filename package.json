@@ -1,0 +1,19 @@
+{
+  "name": "aps-openshell-middleware",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "APS OpenShell reference enforcement middleware. Local only, never published.",
+  "license": "Apache-2.0",
+  "engines": { "node": ">=22" },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.12.6",
+    "@grpc/proto-loader": "^0.7.13",
+    "agent-passport-system": "file:../agent-passport-system"
+  },
+  "scripts": {
+    "fixtures": "node fixtures/generate.mjs",
+    "g1": "node scripts/run-g1.mjs",
+    "p2": "node scripts/run-p2.mjs"
+  }
+}

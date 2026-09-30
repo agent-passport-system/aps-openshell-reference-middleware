@@ -1,0 +1,413 @@
+diff --git a/crates/openshell-supervisor-network/src/l7/relay.rs b/crates/openshell-supervisor-network/src/l7/relay.rs
+index 0aa4532..1b7a170 100644
+--- a/crates/openshell-supervisor-network/src/l7/relay.rs
++++ b/crates/openshell-supervisor-network/src/l7/relay.rs
+@@ -11706,4 +11706,408 @@ network_policies:
+             .unwrap()
+             .unwrap();
+     }
++
++    // ---------------------------------------------------------------------
++    // APS harness (local `aps-harness` branch only; not an OpenShell change).
++    //
++    // Drives this file's real `relay_with_inspection` with an external
++    // supervisor middleware that is a separate OS process, reached over
++    // OpenShell's own external gRPC middleware client path. The registry is
++    // built by the real `MiddlewareRegistry::connect_services` and installed
++    // through the public `OpaEngine::replace_middleware_registry`; nothing here
++    // reimplements relay or middleware enforcement behavior.
++    //
++    // The middleware command and its state directory come from the environment,
++    // so this code carries no path to anything outside the checkout:
++    //   APS_MW_NODE    interpreter to exec
++    //   APS_MW_SCRIPT  middleware entry script
++    //   APS_MW_STATE   middleware state directory
++    //   APS_MW_SANDBOX_ID  sandbox id the supervisor reports for this process
++    // Optional, for the revoke-between-requests case: APS_MW_SWAP_FROM and
++    // APS_MW_SWAP_TO, a plain file copy performed between two requests.
++    // ---------------------------------------------------------------------
++
++    struct ApsMiddlewareProcess {
++        child: std::process::Child,
++        endpoint: String,
++    }
++
++    impl ApsMiddlewareProcess {
++        fn spawn() -> Self {
++            use std::io::BufRead;
++
++            let node = std::env::var("APS_MW_NODE").expect("APS_MW_NODE");
++            let script = std::env::var("APS_MW_SCRIPT").expect("APS_MW_SCRIPT");
++            let state = std::env::var("APS_MW_STATE").expect("APS_MW_STATE");
++            let mut child = std::process::Command::new(node)
++                .arg(script)
++                .env("APS_MW_STATE", state)
++                .stdin(std::process::Stdio::null())
++                .stdout(std::process::Stdio::piped())
++                .spawn()
++                .expect("spawn aps middleware process");
++            let stdout = child.stdout.take().expect("middleware stdout");
++            let mut reader = std::io::BufReader::new(stdout);
++            let mut line = String::new();
++            reader
++                .read_line(&mut line)
++                .expect("read middleware readiness line");
++            let port = line
++                .trim()
++                .strip_prefix("LISTENING ")
++                .unwrap_or_else(|| panic!("unexpected middleware readiness line: {line:?}"))
++                .to_string();
++            Self {
++                child,
++                endpoint: format!("http://127.0.0.1:{port}"),
++            }
++        }
++
++        fn pid(&self) -> u32 {
++            self.child.id()
++        }
++
++        /// Stop the external middleware process and wait for it to exit, so a
++        /// later request meets a registered but unreachable service.
++        fn kill_and_reap(&mut self) {
++            let _ = self.child.kill();
++            let _ = self.child.wait();
++        }
++    }
++
++    impl Drop for ApsMiddlewareProcess {
++        fn drop(&mut self) {
++            let _ = self.child.kill();
++            let _ = self.child.wait();
++        }
++    }
++
++    /// Report the sandbox identity the supervisor would set at sandbox start.
++    /// The relay reads this process-wide context through
++    /// `openshell_ocsf::ctx::ctx()` exactly as it does in the supervisor.
++    fn install_aps_sandbox_identity() -> String {
++        let sandbox_id = std::env::var("APS_MW_SANDBOX_ID").expect("APS_MW_SANDBOX_ID");
++        openshell_ocsf::ctx::set_ctx(openshell_ocsf::EventContext {
++            sandbox_id: sandbox_id.clone(),
++            sandbox_name: "aps-case-a".to_string(),
++            container_image: String::new(),
++            hostname: "aps-harness".to_string(),
++            product_version: "aps-harness".to_string(),
++            proxy_ip: std::net::IpAddr::from([127, 0, 0, 1]),
++            proxy_port: 3128,
++            origin: openshell_ocsf::EventOrigin::Supervisor,
++        });
++        let observed = openshell_ocsf::ctx::ctx().sandbox_id.clone();
++        assert_eq!(
++            observed, sandbox_id,
++            "supervisor sandbox identity must be the one the middleware will be handed"
++        );
++        observed
++    }
++
++    /// Register the external middleware and build the relay inputs.
++    ///
++    /// `include: ["**"]`, `on_error: fail_closed`, and a REST endpoint whose L7
++    /// rules allow `GET /v1/**`, so a denial can only come from the middleware.
++    async fn aps_relay_context(
++        endpoint: &str,
++    ) -> (Arc<OpaEngine>, u64, L7EndpointConfig, L7EvalContext) {
++        use openshell_core::proto::SupervisorMiddlewareService;
++        use openshell_supervisor_middleware::MiddlewareRegistry;
++
++        let registry = MiddlewareRegistry::connect_services(
++            Vec::new(),
++            vec![SupervisorMiddlewareService {
++                name: "aps-authority".into(),
++                grpc_endpoint: endpoint.to_string(),
++                max_payload_bytes: 1024 * 1024,
++                request_timeout: Some(prost_types::Duration {
++                    seconds: 10,
++                    nanos: 0,
++                }),
++                tls_ca_cert_pem: Vec::new(),
++                audience: String::new(),
++                allow_insecure_transport: true,
++            }],
++        )
++        .await
++        .expect("connect the APS middleware over the external gRPC client path");
++
++        let data = r#"
++network_middlewares:
++  aps-authority:
++    middleware: aps-authority
++    on_error: fail_closed
++    endpoints:
++      include: ["**"]
++network_policies:
++  rest_api:
++    name: rest_api
++    endpoints:
++      - host: api.example.test
++        port: 8080
++        protocol: rest
++        enforcement: enforce
++        rules:
++          - allow:
++              method: GET
++              path: "/v1/**"
++    binaries:
++      - { path: /usr/bin/curl }
++"#;
++        let engine = OpaEngine::from_strings(TEST_POLICY, data).expect("test policy");
++        engine
++            .replace_middleware_registry(registry)
++            .expect("publish the APS middleware registry");
++        let input = NetworkInput {
++            host: "api.example.test".into(),
++            port: 8080,
++            binary_path: PathBuf::from("/usr/bin/curl"),
++            binary_sha256: "unused".into(),
++            ancestors: vec![],
++            cmdline_paths: vec![],
++        };
++        let (endpoint_config, generation) = engine
++            .query_endpoint_config_with_generation(&input)
++            .expect("endpoint config");
++        let config = crate::l7::parse_l7_config(&endpoint_config.expect("endpoint")).expect("l7");
++        let ctx = L7EvalContext {
++            host: "api.example.test".into(),
++            port: 8080,
++            request_default_port: Some(8080),
++            policy_name: "rest_api".into(),
++            binary_path: "/usr/bin/curl".into(),
++            ..Default::default()
++        };
++        (Arc::new(engine), generation, config, ctx)
++    }
++
++    /// A fresh tunnel policy engine for one connection, as the supervisor mints
++    /// one per relayed connection. `TunnelPolicyEngine` is not `Clone` and this
++    /// harness does not make it so.
++    fn aps_tunnel(engine: &OpaEngine, generation: u64) -> TunnelPolicyEngine {
++        engine
++            .clone_engine_for_tunnel(generation)
++            .expect("tunnel engine")
++    }
++
++    /// Assert the chain attached at all: a request the middleware denies proves
++    /// `include: ["**"]` selected this destination.
++    fn assert_aps_denied(response: &str, reason_code: &str) {
++        assert!(response.contains("403 Forbidden"), "{response}");
++        let (_, body) = response.split_once("\r\n\r\n").expect("HTTP response");
++        let body: serde_json::Value = serde_json::from_str(body).expect("JSON response");
++        assert_eq!(body["error"], "middleware_denied", "{body}");
++        assert_eq!(body["middleware"], "aps-authority", "{body}");
++        assert_eq!(body["reason_code"], reason_code, "{body}");
++    }
++
++    /// One request over the real relay. Returns the client-visible response and
++    /// the bytes the upstream received.
++    async fn aps_request(
++        config: &L7EndpointConfig,
++        tunnel_engine: TunnelPolicyEngine,
++        ctx: &L7EvalContext,
++        request: &[u8],
++        expect_forwarded: bool,
++    ) -> (String, Vec<u8>) {
++        let (mut app, mut relay_client) = tokio::io::duplex(8192);
++        let (mut relay_upstream, mut upstream) = tokio::io::duplex(8192);
++        let config = config.clone();
++        let ctx = ctx.clone();
++        let relay = tokio::spawn(async move {
++            relay_with_inspection(
++                &config,
++                tunnel_engine,
++                &mut relay_client,
++                &mut relay_upstream,
++                &ctx,
++            )
++            .await
++        });
++
++        app.write_all(request).await.unwrap();
++
++        let mut forwarded = Vec::new();
++        if expect_forwarded {
++            let mut buffer = [0u8; 1024];
++            let n = tokio::time::timeout(
++                std::time::Duration::from_secs(10),
++                upstream.read(&mut buffer),
++            )
++            .await
++            .expect("allowed request should reach upstream")
++            .unwrap();
++            assert!(n > 0, "allowed request should reach upstream");
++            forwarded.extend_from_slice(&buffer[..n]);
++            upstream
++                .write_all(
++                    b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
++                )
++                .await
++                .unwrap();
++        }
++
++        let mut response_buffer = [0u8; 2048];
++        let n = tokio::time::timeout(
++            std::time::Duration::from_secs(10),
++            app.read(&mut response_buffer),
++        )
++        .await
++        .expect("a response should reach the client")
++        .unwrap();
++        let response = String::from_utf8_lossy(&response_buffer[..n]).to_string();
++
++        if !expect_forwarded {
++            // Zero HTTP request or application bytes received by the upstream.
++            // This says nothing about whether a TCP connection was created.
++            let mut upstream_request = [0u8; 32];
++            let result = tokio::time::timeout(
++                std::time::Duration::from_millis(200),
++                upstream.read(&mut upstream_request),
++            )
++            .await;
++            assert!(
++                matches!(result, Err(_) | Ok(Ok(0))),
++                "upstream should not receive request bytes"
++            );
++        }
++
++        drop(app);
++        tokio::time::timeout(std::time::Duration::from_secs(10), relay)
++            .await
++            .expect("relay should finish")
++            .unwrap()
++            .unwrap();
++        (response, forwarded)
++    }
++
++    const APS_GET: &[u8] =
++        b"GET /v1/messages HTTP/1.1\r\nHost: api.example.test\r\nConnection: close\r\n\r\n";
++
++    /// GREEN. A valid chain: the child's GET reaches upstream exactly once and
++    /// the response is relayed back.
++    #[tokio::test]
++    async fn aps_middleware_allows_valid_chain_and_forwards() {
++        install_aps_sandbox_identity();
++        let middleware = ApsMiddlewareProcess::spawn();
++        let (engine, generation, config, ctx) = aps_relay_context(&middleware.endpoint).await;
++        let (response, forwarded) =
++            aps_request(&config, aps_tunnel(&engine, generation), &ctx, APS_GET, true).await;
++        assert!(response.contains("204 No Content"), "{response}");
++        let forwarded = String::from_utf8_lossy(&forwarded);
++        assert!(forwarded.starts_with("GET /v1/messages"), "{forwarded}");
++        assert_eq!(
++            forwarded.matches("GET /v1/messages").count(),
++            1,
++            "upstream must receive the request exactly once: {forwarded}"
++        );
++    }
++
++    /// RED and the P2 deny cases. Which APS failure the middleware reports is
++    /// decided entirely by the fixture state on disk; this test asserts the
++    /// decision and zero upstream bytes.
++    #[tokio::test]
++    async fn aps_middleware_denies_before_upstream() {
++        install_aps_sandbox_identity();
++        let reason_code = std::env::var("APS_MW_EXPECT_REASON").expect("APS_MW_EXPECT_REASON");
++        let middleware = ApsMiddlewareProcess::spawn();
++        let (engine, generation, config, ctx) = aps_relay_context(&middleware.endpoint).await;
++        let (response, forwarded) =
++            aps_request(&config, aps_tunnel(&engine, generation), &ctx, APS_GET, false).await;
++        assert_aps_denied(&response, &reason_code);
++        assert!(forwarded.is_empty(), "upstream received {} bytes", forwarded.len());
++    }
++
++    /// P2 case 6. An upgrade request crosses the middleware and is denied before
++    /// upstream, which closes the WebSocket binary and raw post-upgrade residual
++    /// paths for this deployment posture.
++    #[tokio::test]
++    async fn aps_middleware_denies_upgrade_request_before_upstream() {
++        install_aps_sandbox_identity();
++        let middleware = ApsMiddlewareProcess::spawn();
++        let (engine, generation, config, ctx) = aps_relay_context(&middleware.endpoint).await;
++        let request = b"GET /v1/messages HTTP/1.1\r\nHost: api.example.test\r\n\
++Upgrade: websocket\r\nSec-WebSocket-Version: 13\r\n\
++Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nConnection: close\r\n\r\n";
++        let (response, forwarded) =
++            aps_request(&config, aps_tunnel(&engine, generation), &ctx, request, false).await;
++        assert_aps_denied(&response, "aps_upgrade_not_permitted");
++        assert!(forwarded.is_empty(), "upstream received {} bytes", forwarded.len());
++    }
++
++    /// P2 case 7. Revocation between two requests of the same session: the first
++    /// request is allowed, the ancestor grant is then revoked, and the second
++    /// request is denied with zero upstream bytes. The swap is a plain file copy
++    /// between two paths supplied by the environment.
++    #[tokio::test]
++    async fn aps_middleware_denies_second_request_after_revocation() {
++        install_aps_sandbox_identity();
++        let swap_from = std::env::var("APS_MW_SWAP_FROM").expect("APS_MW_SWAP_FROM");
++        let swap_to = std::env::var("APS_MW_SWAP_TO").expect("APS_MW_SWAP_TO");
++        let middleware = ApsMiddlewareProcess::spawn();
++        let (engine, generation, config, ctx) = aps_relay_context(&middleware.endpoint).await;
++
++        let (first, forwarded) =
++            aps_request(&config, aps_tunnel(&engine, generation), &ctx, APS_GET, true).await;
++        assert!(first.contains("204 No Content"), "{first}");
++        assert!(!forwarded.is_empty());
++
++        std::fs::copy(&swap_from, &swap_to).expect("revoke the ancestor grant between requests");
++
++        let (second, forwarded) =
++            aps_request(&config, aps_tunnel(&engine, generation), &ctx, APS_GET, false).await;
++        assert_aps_denied(&second, "aps_authority_revoked");
++        assert!(forwarded.is_empty(), "upstream received {} bytes", forwarded.len());
++    }
++
++    /// P2 case 5. Registered but unreachable, distinct from never registered.
++    /// The registry is built while the middleware answers Describe, one request
++    /// is allowed, the process is then killed, and the next request is observed.
++    #[tokio::test]
++    async fn aps_middleware_registered_but_unreachable_denies_before_upstream() {
++        install_aps_sandbox_identity();
++        let mut middleware = ApsMiddlewareProcess::spawn();
++        let pid = middleware.pid();
++        let (engine, generation, config, ctx) = aps_relay_context(&middleware.endpoint).await;
++
++        let (first, forwarded) =
++            aps_request(&config, aps_tunnel(&engine, generation), &ctx, APS_GET, true).await;
++        assert!(first.contains("204 No Content"), "{first}");
++        assert!(!forwarded.is_empty());
++
++        middleware.kill_and_reap();
++        println!("aps-harness: killed middleware pid {pid}");
++
++        let (second, forwarded) =
++            aps_request(&config, aps_tunnel(&engine, generation), &ctx, APS_GET, false).await;
++        // Observed, not assumed: record what a fail-closed chain actually does
++        // when its registered service has gone away.
++        println!("aps-harness: response after kill: {second}");
++        assert!(second.contains("403 Forbidden"), "{second}");
++        let (_, body) = second.split_once("\r\n\r\n").expect("HTTP response");
++        let body: serde_json::Value = serde_json::from_str(body).expect("JSON response");
++        assert_eq!(body["error"], "middleware_failed", "{body}");
++        assert!(forwarded.is_empty(), "upstream received {} bytes", forwarded.len());
++    }
++
++    /// P2 case 8. Middleware decision latency over allowed requests, measured on
++    /// this machine. The per-request decision times are recorded by the
++    /// middleware itself; this test only drives the requests.
++    #[tokio::test]
++    async fn aps_middleware_latency_over_allowed_requests() {
++        install_aps_sandbox_identity();
++        let count: usize = std::env::var("APS_MW_LATENCY_REQUESTS")
++            .expect("APS_MW_LATENCY_REQUESTS")
++            .parse()
++            .expect("request count");
++        let middleware = ApsMiddlewareProcess::spawn();
++        let (engine, generation, config, ctx) = aps_relay_context(&middleware.endpoint).await;
++        for _ in 0..count {
++            let (response, forwarded) =
++                aps_request(&config, aps_tunnel(&engine, generation), &ctx, APS_GET, true).await;
++            assert!(response.contains("204 No Content"), "{response}");
++            assert!(!forwarded.is_empty());
++        }
++    }
+ }
