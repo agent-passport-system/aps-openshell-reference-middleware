@@ -39,10 +39,15 @@ to work from the installed package artifact before any product code was written.
 
 ## Enforcement point
 
-`crates/openshell-supervisor-network/src/l7/relay.rs:1208` at `ba16b9f`, the external middleware chain apply. A
-denial returns at `:1240`; the upstream write is at `:1305`. The middleware is a separate OS process reached over
-OpenShell's own external gRPC middleware client path: the registry is built by
+The tested path is `relay_with_inspection` -> `relay_rest`. The harness drives `relay_with_inspection`
+(`crates/openshell-supervisor-network/src/l7/relay.rs:853`), which dispatches `L7Protocol::Rest` to `relay_rest`
+(`relay.rs:1830`) at `relay.rs:877`. Inside `relay_rest`, at `ba16b9f`: the external middleware chain apply is
+`relay.rs:1988`, a denial returns at `:2017`, and the upstream write is at `:2088`. The middleware is a separate
+OS process reached over OpenShell's own external gRPC middleware client path: the registry is built by
 `MiddlewareRegistry::connect_services` and installed with the public `OpaEngine::replace_middleware_registry`.
+
+The `relay_with_route_selection` path (`relay.rs:923`) is not exercised by any test here, and whether it enforces
+the same way is UNKNOWN.
 
 ## Identity
 
@@ -59,7 +64,8 @@ detects that.
 
 ## What is established
 
-Each row is a test that ran through the real relay. Every deny case asserts zero upstream bytes.
+Each row is a test that ran through the real relay. Every deny case asserts on the harness's own post-denial
+read of the upstream pipe, described under "Zero upstream bytes" below.
 
 | Case | Test | Result |
 |---|---|---|
@@ -82,8 +88,15 @@ Each row is a test that ran through the real relay. Every deny case asserts zero
 Latency is as measured on this machine by the middleware process itself, and is not a claim about any other
 machine or deployment.
 
-"Zero upstream bytes" means zero HTTP request or application bytes received by the upstream. It does not claim
-that no TCP connection was created; no test here proves that.
+"Zero upstream bytes" comes from one observation and one only: a single 200 ms read of the upstream pipe, made
+by the harness after the client already has the denial response. The harness prints what that read returned as
+`APS_UPSTREAM_BYTES_AFTER_DENY=<n>` before it asserts on it, and both runners parse that line, so a run where the
+observation did not happen fails rather than reading as a zero. The number is what the one read returned, capped
+by a 32-byte buffer, so it separates zero from nonzero rather than counting a whole forward.
+
+What that proves: zero HTTP request or application bytes reached the upstream inside that window. What it does
+not touch: whether a TCP connection was created, which no test here proves, and a forward that arrived later than
+200 ms, which this observation would not catch and which no test here drives.
 
 Two named results worth stating exactly:
 
@@ -113,10 +126,12 @@ Two named results worth stating exactly:
   `UninspectableTrafficGate` under a fail-closed chain**, not inspected by this middleware. The denial is
   OpenShell's, not APS's. This build does not test those paths.
 - **Non-WebSocket upgrades.** The upgrade refusal detects an RFC 6455 handshake from `Sec-WebSocket-Key` and
-  `Sec-WebSocket-Version`, because OpenShell omits `Upgrade` and `Connection` from what a middleware sees
-  (`crates/openshell-supervisor-middleware/src/headers.rs:298` and `:303`) and hands the HTTP request stage a
-  hardcoded `"https"` scheme (`crates/openshell-supervisor-network/src/l7/middleware.rs:524`). A non-WebSocket
-  upgrade carries no `Sec-WebSocket-*` header and this middleware cannot see it at all. Separately, h2c upgrade
+  `Sec-WebSocket-Version`, because OpenShell omits `Upgrade` and `Connection` from what a middleware sees:
+  `safe_middleware_headers` (`crates/openshell-supervisor-network/src/l7/middleware.rs:828`, called on the
+  request path at `:616`) builds the middleware-visible header list and its filter drops `connection` at `:857`
+  and `upgrade` at `:862`. The same stage hands the HTTP request a hardcoded `"https"` scheme
+  (`middleware.rs:524`). A non-WebSocket upgrade carries no `Sec-WebSocket-*` header and this middleware cannot
+  see it at all. Separately, h2c upgrade
   requests are refused by OpenShell with 403 regardless of enforcement mode
   (`crates/openshell-supervisor-network/src/l7/rest.rs:2445-2456`).
 - **Later narrowing of an ancestor's authority.** P2-1 establishes chain narrowing: a child that requests
@@ -138,7 +153,7 @@ Two named results worth stating exactly:
 
 ## The HARNESS PATCH
 
-`harness/openshell-harness.patch`. A 457-line pure insertion into
+`harness/openshell-harness.patch`. A 494-line pure insertion into
 `crates/openshell-supervisor-network/src/l7/relay.rs` inside its existing `#[cfg(test)] mod tests`, on a local
 OpenShell branch `aps-harness`. No deletions, no modifications, one file, test code only.
 
@@ -170,7 +185,7 @@ evidence/      captured run output
 
 ```sh
 npm install
-node fixtures/generate.mjs      # regenerate fixtures (rewrites the committed keys)
+node fixtures/generate.mjs      # regenerate fixtures, reusing the committed keys
 node scripts/smoke.mjs          # middleware only, no OpenShell
 node scripts/run-g1.mjs         # G1: 25 GREEN + 25 RED through the real relay
 node scripts/run-p2.mjs         # P2: 12 cases, 10 passes, plus the latency case

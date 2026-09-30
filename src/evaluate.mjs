@@ -36,9 +36,12 @@ export function evaluateRequest({ sandboxId, headers, stateDir, nowMs, revocatio
   // does not depend on chain state.
   //
   // Detected from the RFC 6455 handshake headers, not from `Upgrade`. OpenShell
-  // omits `Upgrade` and `Connection` from what a middleware sees
-  // (crates/openshell-supervisor-middleware/src/headers.rs:298 and :303 at
-  // ba16b9f) and hands the HTTP request stage a hardcoded "https" scheme
+  // omits `Upgrade` and `Connection` from what a middleware sees: at ba16b9f,
+  // safe_middleware_headers
+  // (crates/openshell-supervisor-network/src/l7/middleware.rs:828, called on the
+  // request path at :616) builds the middleware-visible header list and its
+  // filter drops `connection` at :857 and `upgrade` at :862. The same stage
+  // hands the HTTP request a hardcoded "https" scheme
   // (crates/openshell-supervisor-network/src/l7/middleware.rs:524), so neither
   // the header nor the scheme can carry the signal. `Sec-WebSocket-Key` and
   // `Sec-WebSocket-Version` are end-to-end headers and do reach the middleware;

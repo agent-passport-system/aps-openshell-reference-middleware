@@ -59,9 +59,16 @@ includes `error: "middleware_denied"`, `middleware: <config name>` and `reason_c
 
 ## Enforcement point
 
-`crates/openshell-supervisor-network/src/l7/relay.rs:1208`, `apply_middleware_chain_with_request_id`. A deny
-returns at `:1240` after `send_middleware_rejection_response` at `:1232`. The upstream write is
-`relay_http_request_with_credential_rejection_observed` at `:1305`. All three re-verified at `ba16b9f`.
+The tested path is `relay_with_inspection` -> `relay_rest`. The harness drives `relay_with_inspection`
+(`crates/openshell-supervisor-network/src/l7/relay.rs:853`), which dispatches `L7Protocol::Rest` to `relay_rest`
+(`:1830`) at `:877`. Inside `relay_rest`: the external middleware chain apply is
+`apply_middleware_chain_with_request_id` at `:1988`, a deny returns at `:2017` after
+`send_middleware_rejection_response` at `:2009`, and the upstream write is
+`relay_http_request_with_credential_rejection` at `:2088`. All re-verified at `ba16b9f`.
+
+`relay_with_route_selection` (`:923`) is a different relay path. It contains its own chain apply, deny return and
+upstream write (`:1208`, `:1240`, `:1305`), which earlier drafts of these artifacts cited by mistake. No test
+here executes it, so whether it enforces the same way is UNKNOWN.
 
 ## Identity: operator-configured mapping, not a cryptographic binding
 

@@ -48,9 +48,9 @@ EXIT=0
 
 | Claim from chat | Verified | How |
 |---|---|---|
-| External middleware chain applies at `relay.rs:1208` | yes | `:1208` is `apply_middleware_chain_with_request_id(` |
-| A denial returns at `relay.rs:1240` | yes | `:1232` `send_middleware_rejection_response`, `:1240` `return Ok(());` |
-| Upstream write at `relay.rs:1305` | yes | `:1305` `relay_http_request_with_credential_rejection_observed(` |
+| External middleware chain applies at `relay.rs:1208` | the line is what chat said, but it is on a path no test here runs | `:1208` is `apply_middleware_chain_with_request_id(`, inside `relay_with_route_selection` (`:923`). The tested path is `relay_with_inspection` -> `relay_rest`, where the chain apply is `:1988`. See the erratum at the end of this file. |
+| A denial returns at `relay.rs:1240` | same, same path | `:1232` `send_middleware_rejection_response`, `:1240` `return Ok(());`, both inside `relay_with_route_selection`. On the tested path the deny returns at `:2017` after `send_middleware_rejection_response` at `:2009`. |
+| Upstream write at `relay.rs:1305` | same, same path | `:1305` `relay_http_request_with_credential_rejection_observed(`, inside `relay_with_route_selection`. On the tested path the upstream write is `relay_http_request_with_credential_rejection(` at `:2088`. |
 | `audit_endpoint_still_enforces_middleware_deny` at `relay.rs:5922` | yes | `grep -n` returns exactly `relay.rs:5922` |
 | That test asserts "upstream should not receive request bytes" | yes | `relay.rs:5966-5969`, `matches!(result, Err(_) \| Ok(Ok(0)))` |
 | `middleware_relay_context_with_enforcement` exists | yes | `relay.rs:4257` |
@@ -348,10 +348,11 @@ and its record showed why:
 {"header_names":["sec-websocket-version","sec-websocket-key"],"scheme":"https","decision":"allow", ...}
 ```
 
-OpenShell omits `Upgrade` and `Connection` from what a middleware sees
-(`crates/openshell-supervisor-middleware/src/headers.rs:298` and `:303`) and hands the HTTP request stage a
-hardcoded `"https"` scheme (`crates/openshell-supervisor-network/src/l7/middleware.rs:524`), so neither the
-header nor the scheme carries the signal. `Sec-WebSocket-Key` and `Sec-WebSocket-Version` are end-to-end headers
+OpenShell omits `Upgrade` and `Connection` from what a middleware sees: `safe_middleware_headers`
+(`crates/openshell-supervisor-network/src/l7/middleware.rs:828`, called on the request path at `:616`) builds the
+middleware-visible header list and its filter drops `connection` at `:857` and `upgrade` at `:862`. The same
+stage hands the HTTP request a hardcoded `"https"` scheme (`middleware.rs:524`), so neither the header nor the
+scheme carries the signal. `Sec-WebSocket-Key` and `Sec-WebSocket-Version` are end-to-end headers
 and do arrive. The refusal keys on those, which catches an RFC 6455 handshake and does not catch a
 non-WebSocket upgrade.
 
@@ -422,8 +423,11 @@ runtime, not installed per rules.**
 
 ## Things this evidence does not establish
 
-- No test here proves that no TCP connection to the upstream was created. "Zero upstream bytes" is about HTTP
-  request and application bytes received by the upstream.
+- No test here proves that no TCP connection to the upstream was created. "Zero upstream bytes" is a single
+  200 ms read of the upstream pipe, taken after the client already has the denial response. It is about HTTP
+  request and application bytes received by the upstream inside that window, nothing more.
+- No test here proves that a forward delayed past the 200 ms window would be caught. The observation would not
+  see it, and no test here drives a delayed forward.
 - No test here proves `include: ["**"]` attaches to every destination in a running policy. Attachment is proved
   for `api.example.test:8080` only.
 - Nothing here was run inside a real sandbox, so the outer network fence that makes the supervisor the only

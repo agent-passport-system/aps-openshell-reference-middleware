@@ -82,9 +82,13 @@ const observation = {
   host: {
     project: 'NVIDIA/OpenShell',
     commit: 'ba16b9f2c7c59899532628ffa6cd26d37bffd477',
-    enforcement_point: 'crates/openshell-supervisor-network/src/l7/relay.rs:1208',
-    denial_return: 'crates/openshell-supervisor-network/src/l7/relay.rs:1240',
-    upstream_write: 'crates/openshell-supervisor-network/src/l7/relay.rs:1305',
+    tested_path: 'relay_with_inspection (relay.rs:853) -> relay_rest (relay.rs:1830), dispatched at relay.rs:877',
+    enforcement_point: 'crates/openshell-supervisor-network/src/l7/relay.rs:1988',
+    denial_return: 'crates/openshell-supervisor-network/src/l7/relay.rs:2017',
+    upstream_write: 'crates/openshell-supervisor-network/src/l7/relay.rs:2088',
+    path_not_exercised:
+      'relay_with_route_selection (crates/openshell-supervisor-network/src/l7/relay.rs:923) is not ' +
+      'exercised by any test behind this observation. Whether it enforces the same way is UNKNOWN.',
   },
   posture: {
     attachment: 'network_middlewares entry, on_error: fail_closed, endpoints.include: ["**"]',
@@ -94,10 +98,14 @@ const observation = {
   observed:
     'When the neutral decision is DENY at the supervisor middleware boundary, the tested ' +
     'relay sends zero HTTP request bytes upstream and returns 403 with ' +
-    'error=middleware_denied, middleware=aps-authority, reason_code=aps_authority_revoked.',
+    'error=middleware_denied, middleware=aps-authority, reason_code=aps_authority_revoked. ' +
+    'Zero bytes is a single 200 ms read of the upstream pipe, taken after the client ' +
+    'already has the denial response.',
   not_observed:
     'Whether a TCP connection to the upstream was created. The zero-bytes result is about ' +
-    'HTTP request and application bytes received by the upstream, nothing more.',
+    'HTTP request and application bytes received by the upstream inside the 200 ms window ' +
+    'after the denial reached the client, nothing more. A forward that arrived after that ' +
+    'window would not be seen, and no test here drives a delayed forward.',
   runs: { green: 25, red: 25, red_runs_with_zero_upstream_bytes: 25 },
 }
 
