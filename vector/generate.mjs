@@ -43,6 +43,10 @@ const neutral = {
   status: 'CANDIDATE',
   vector_id: 'aps-authority-delegation-case-a-ancestor-revoked',
   profile: 'aps:authority-delegation:v1',
+  construction_ref:
+    'draft-pidlisnyi-aps-04 Section 4.1 (delegation_id and signature construction, including the ' +
+    'APS-AUTHORITY-DELEGATION-ID-V1 and APS-AUTHORITY-DELEGATION-SIGNATURE-V1 domain tags with a 0x00 ' +
+    'separator) and Section 4.2 (component orders, including reversibility)',
   evaluated_at: NOW,
   trust_anchors: { roots: anchors.roots, verification_keys: anchors.keys },
   chain,
